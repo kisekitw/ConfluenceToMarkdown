@@ -1,60 +1,64 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Confluence → Markdown</title>
-<link rel="stylesheet" href="popup.css">
-</head>
-<body>
-  <div class="header">
-    <span class="logo">C→MD</span>
-    <div>
-      <div class="title">Confluence → Markdown</div>
-      <div class="subtitle">Export page with images &amp; macros</div>
-    </div>
-  </div>
-
-  <div class="body">
-    <div id="status" class="status status-checking">
-      <span class="status-icon">⏳</span>
-      <span id="status-text">Checking page…</span>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Confluence → Markdown</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="header">
+      <img class="logo" src="icons/icon32.png" alt="logo" />
+      <div>
+        <div class="title">Confluence → Markdown</div>
+        <div class="subtitle">Export page with images &amp; macros</div>
+      </div>
     </div>
 
-    <div class="section-label">Options</div>
-    <div class="options">
-      <label class="opt">
-        <input type="checkbox" id="opt-images" checked>
-        <span>Download images &amp; attachments</span>
-      </label>
-      <label class="opt">
-        <input type="checkbox" id="opt-macros" checked>
-        <span>Capture macros (Gliffy, draw.io)</span>
-      </label>
-      <label class="opt">
-        <input type="checkbox" id="opt-metadata" checked>
-        <span>Include metadata header</span>
-      </label>
-      <label class="opt">
-        <input type="checkbox" id="opt-jira" checked>
-        <span>Convert Jira issue tables</span>
-      </label>
+    <div class="body">
+      <div id="status" class="status status-checking">
+        <span class="status-icon">⏳</span>
+        <span id="status-text">Checking page…</span>
+      </div>
+
+      <div class="section-label">Options</div>
+      <div class="options">
+        <label class="opt">
+          <input type="checkbox" id="opt-metadata" checked />
+          <span>Include metadata header</span>
+        </label>
+        <label class="opt">
+          <input type="checkbox" id="opt-images" checked />
+          <span>Download images &amp; attachments</span>
+        </label>
+        <label class="opt">
+          <input type="checkbox" id="opt-macros" checked />
+          <span>Capture macros (Gliffy, draw.io)</span>
+        </label>
+
+        <label class="opt">
+          <input type="checkbox" id="opt-jira" checked />
+          <span>Convert Jira issue tables</span>
+        </label>
+      </div>
+
+      <button class="btn" id="exportBtn" disabled>
+        <span id="btnIcon">⬇</span>
+        <span id="btnText">Export to Markdown (.zip)</span>
+      </button>
+
+      <div class="progress" id="progress">
+        <div class="progress-bar"><div class="progress-fill"></div></div>
+        <div class="progress-msg" id="progressMsg">Processing…</div>
+      </div>
+
+      <div class="result" id="result"></div>
     </div>
 
-    <button class="btn" id="exportBtn" disabled>
-      <span id="btnIcon">⬇</span>
-      <span id="btnText">Export to Markdown (.zip)</span>
-    </button>
-
-    <div class="progress" id="progress">
-      <div class="progress-bar"><div class="progress-fill"></div></div>
-      <div class="progress-msg" id="progressMsg">Processing…</div>
+    <div class="footer">
+      Output: <strong>filename.zip</strong> → <code>.md</code> +
+      <code>images/</code>
     </div>
 
-    <div class="result" id="result"></div>
-  </div>
-
-  <div class="footer">Output: <strong>filename.zip</strong> → <code>.md</code> + <code>images/</code></div>
-
-  <script src="popup.js"></script>
-</body>
+    <script src="popup.js"></script>
+  </body>
 </html>
