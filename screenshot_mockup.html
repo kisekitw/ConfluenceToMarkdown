@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* ── Outer: exactly 1280x800 browser window ── */
+  html, body { width: 1280px; height: 800px; overflow: hidden; background: #3c4043; }
+
+  /* ── Browser chrome ── */
+  .chrome-bar {
+    height: 52px;
+    background: #dee1e6;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 8px;
+    border-bottom: 1px solid #c8cacd;
+  }
+  .dots { display: flex; gap: 6px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot-r { background: #ff5f57; }
+  .dot-y { background: #febc2e; }
+  .dot-g { background: #28c840; }
+  .url-bar {
+    flex: 1;
+    height: 28px;
+    background: #fff;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+    font-size: 12px;
+    color: #555;
+    gap: 6px;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+  .lock-icon { color: #1a73e8; font-size: 11px; }
+  .ext-icons { display: flex; gap: 6px; margin-left: auto; align-items: center; }
+  .ext-icon {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: transparent;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .ext-icon.active { background: #e8f0fe; }
+
+  /* ── Page area ── */
+  .page { display: flex; height: 748px; background: #f4f5f7; }
+
+  /* ── Confluence sidebar ── */
+  .sidebar {
+    width: 220px;
+    background: #fff;
+    border-right: 1px solid #ebecf0;
+    padding: 16px 0;
+    flex-shrink: 0;
+  }
+  .sidebar-section { padding: 0 16px; margin-bottom: 16px; }
+  .sidebar-title { font-size: 11px; font-weight: 700; color: #6b778c; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; font-family: -apple-system,"Segoe UI",Arial,sans-serif; }
+  .sidebar-item {
+    font-size: 12px; color: #172b4d;
+    padding: 5px 8px; border-radius: 4px;
+    margin-bottom: 2px; cursor: pointer;
+    font-family: -apple-system,"Segoe UI",Arial,sans-serif;
+  }
+  .sidebar-item:hover { background: #f4f5f7; }
+  .sidebar-item.active { background: #e9f2ff; color: #0052cc; font-weight: 500; }
+
+  /* ── Confluence header ── */
+  .cf-header {
+    height: 56px;
+    background: #0052cc;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .cf-logo { font-size: 20px; font-weight: 800; color: #fff; font-family: -apple-system,"Segoe UI",Arial,sans-serif; letter-spacing: -0.5px; }
+  .cf-nav { display: flex; gap: 4px; margin-left: 8px; }
+  .cf-nav-item { font-size: 12px; color: rgba(255,255,255,0.85); padding: 6px 10px; border-radius: 4px; cursor: pointer; font-family: -apple-system,"Segoe UI",Arial,sans-serif; }
+  .cf-nav-item:hover { background: rgba(255,255,255,0.15); }
+  .cf-search {
+    margin-left: auto;
+    width: 200px; height: 28px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 4px;
+    display: flex; align-items: center;
+    padding: 0 10px;
+    font-size: 12px; color: rgba(255,255,255,0.7);
+    font-family: -apple-system,"Segoe UI",Arial,sans-serif;
+  }
+
+  /* ── Main content area ── */
+  .main {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .content-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 32px 40px;
+    background: #fff;
+    overflow: hidden;
+    position: relative;
+  }
+  .breadcrumb { font-size: 12px; color: #6b778c; margin-bottom: 20px; font-family: -apple-system,"Segoe UI",Arial,sans-serif; }
+  .breadcrumb a { color: #0052cc; text-decoration: none; }
+  .page-title { font-size: 28px; font-weight: 700; color: #172b4d; margin-bottom: 6px; font-family: -apple-system,"Segoe UI",Arial,sans-serif; }
+  .page-meta { font-size: 12px; color: #6b778c; margin-bottom: 24px; font-family: -apple-system,"Segoe UI",Arial,sans-serif; }
+  .page-body { font-family: -apple-system,"Segoe UI",Arial,sans-serif; color: #172b4d; }
+  .page-h2 { font-size: 18px; font-weight: 600; margin: 20px 0 10px; }
+  .page-p { font-size: 13px; line-height: 1.6; margin-bottom: 10px; color: #344563; }
+  .page-code {
+    background: #f4f5f7; border-radius: 4px; padding: 12px 14px;
+    font-family: 'Consolas', 'Courier New', monospace; font-size: 12px;
+    color: #172b4d; margin-bottom: 14px; border: 1px solid #ebecf0;
+  }
+  .info-panel {
+    background: #e9f2ff; border-left: 4px solid #0052cc;
+    padding: 10px 14px; border-radius: 0 4px 4px 0;
+    font-size: 12px; color: #0747a6; margin-bottom: 14px;
+  }
+
+  /* ── Popup overlay ── */
+  .popup-wrap {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 272px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.12);
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    font-size: 13px;
+    color: #172b4d;
+  }
+  .popup-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px;
+    background: #0052cc; color: #fff;
+  }
+  .popup-logo {
+    width: 34px; height: 34px; border-radius: 6px;
+    object-fit: cover; flex-shrink: 0;
+    background: #fff; display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .popup-title { font-weight: 700; font-size: 13px; }
+  .popup-subtitle { font-size: 11px; opacity: 0.78; margin-top: 1px; }
+  .popup-body { padding: 12px 14px; }
+  .popup-status {
+    display: flex; align-items: flex-start; gap: 7px;
+    padding: 8px 10px; border-radius: 6px;
+    font-size: 12px; margin-bottom: 11px; line-height: 1.45;
+    background: #e3fcef; color: #006644;
+  }
+  .popup-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.7px;
+    text-transform: uppercase; color: #6b778c; margin-bottom: 7px;
+  }
+  .popup-options { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .popup-opt { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; }
+  .popup-opt input { width: 14px; height: 14px; accent-color: #0052cc; }
+  .popup-btn {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    width: 100%; padding: 9px 14px;
+    background: #0052cc; color: #fff;
+    border: none; border-radius: 6px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .popup-footer {
+    padding: 8px 14px;
+    border-top: 1px solid #ebecf0;
+    font-size: 10px; color: #97a0af; text-align: center;
+  }
+  .popup-footer code {
+    background: #f4f5f7; padding: 1px 4px;
+    border-radius: 3px; font-size: 10px; color: #42526e;
+  }
+</style>
+</head>
+<body>
+
+<!-- Browser chrome -->
+<div class="chrome-bar">
+  <div class="dots">
+    <div class="dot dot-r"></div>
+    <div class="dot dot-y"></div>
+    <div class="dot dot-g"></div>
+  </div>
+  <div class="url-bar">
+    <span class="lock-icon">🔒</span>
+    <span>your-company.atlassian.net/wiki/spaces/PROJ/pages/123456/Data+Analysis+Guide</span>
+  </div>
+  <div class="ext-icons">
+    <div class="ext-icon">⭐</div>
+    <div class="ext-icon">⋯</div>
+    <div class="ext-icon active" title="Confluence to Markdown Exporter">
+      <img src="artifact/icons/icon32.png" width="20" height="20" style="border-radius:4px">
+    </div>
+  </div>
+</div>
+
+<!-- Confluence header -->
+<div class="cf-header">
+  <span class="cf-logo">Confluence</span>
+  <div class="cf-nav">
+    <span class="cf-nav-item">Spaces</span>
+    <span class="cf-nav-item">People</span>
+    <span class="cf-nav-item">Apps</span>
+  </div>
+  <div class="cf-search">🔍 &nbsp;Search…</div>
+</div>
+
+<!-- Page area -->
+<div class="page">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">PROJ Space</div>
+      <div class="sidebar-item">📋 Overview</div>
+      <div class="sidebar-item">📁 Architecture</div>
+      <div class="sidebar-item active">📄 Data Analysis Guide</div>
+      <div class="sidebar-item">📄 API Reference</div>
+      <div class="sidebar-item">📄 Deployment Guide</div>
+      <div class="sidebar-item">📄 Release Notes</div>
+    </div>
+  </div>
+
+  <!-- Main content + popup overlay -->
+  <div class="main">
+    <div class="content-wrap">
+      <div class="breadcrumb">
+        <a href="#">PROJ</a> › <a href="#">Architecture</a> › Data Analysis Guide
+      </div>
+      <div class="page-title">Data Analysis Guide</div>
+      <div class="page-meta">Last updated by John Smith · Apr 18, 2026 · 12 min read</div>
+
+      <div class="page-body">
+        <div class="info-panel">
+          ℹ️ &nbsp;This page covers data pipeline architecture for the Samsung 100M dataset processing workflow.
+        </div>
+
+        <div class="page-h2">Overview</div>
+        <div class="page-p">The data analysis pipeline processes incoming records through a multi-stage transformation layer. Each stage applies validation, normalization, and aggregation logic before forwarding results to the downstream consumer.</div>
+
+        <div class="page-p">Key components include the ingestion service, the transform engine, and the output formatter. All components communicate via internal message queues with at-least-once delivery guarantees.</div>
+
+        <div class="page-h2">Configuration</div>
+        <div class="page-code">pipeline:<br>&nbsp;&nbsp;batch_size: 5000<br>&nbsp;&nbsp;workers: 8<br>&nbsp;&nbsp;timeout_ms: 30000<br>&nbsp;&nbsp;retry_policy: exponential</div>
+      </div>
+
+      <!-- Extension popup -->
+      <div class="popup-wrap">
+        <div class="popup-header">
+          <div class="popup-logo">
+            <img src="artifact/icons/icon32.png" width="34" height="34" style="border-radius:6px">
+          </div>
+          <div>
+            <div class="popup-title">Confluence → Markdown</div>
+            <div class="popup-subtitle">Export page with images &amp; macros</div>
+          </div>
+        </div>
+        <div class="popup-body">
+          <div class="popup-status">
+            <span>✓</span>
+            <span>Confluence page detected<br><em>Data Analysis Guide</em></span>
+          </div>
+          <div class="popup-label">Options</div>
+          <div class="popup-options">
+            <label class="popup-opt"><input type="checkbox" checked disabled> <span>Include metadata header</span></label>
+            <label class="popup-opt"><input type="checkbox" checked disabled> <span>Download images &amp; attachments</span></label>
+            <label class="popup-opt"><input type="checkbox" checked disabled> <span>Capture macros (Gliffy, draw.io)</span></label>
+            <label class="popup-opt"><input type="checkbox" checked disabled> <span>Convert Jira issue tables</span></label>
+          </div>
+          <button class="popup-btn">⬇ &nbsp;Export to Markdown (.zip)</button>
+        </div>
+        <div class="popup-footer">Output: <strong>filename.zip</strong> → <code>.md</code> + <code>images/</code></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
