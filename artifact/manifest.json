@@ -5,8 +5,7 @@
   "description": "Export Confluence pages to Markdown with images, tables, and macros (Gliffy, draw.io, panels, code blocks).",
   "permissions": [
     "activeTab",
-    "scripting",
-    "tabs"
+    "scripting"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -16,6 +15,7 @@
     "default_title": "Export to Markdown",
     "default_icon": {
       "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
@@ -25,6 +25,7 @@
   },
   "icons": {
     "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   }
