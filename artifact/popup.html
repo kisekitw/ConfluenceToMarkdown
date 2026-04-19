@@ -46,12 +46,19 @@
         <span id="btnText">Export to Markdown (.zip)</span>
       </button>
 
+      <input type="file" id="pushFileInput" accept=".zip,.md" style="display:none" />
+      <button class="btn btn-push" id="pushBtn" disabled>
+        <span>⬆</span>
+        <span id="pushBtnText">Push to Confluence</span>
+      </button>
+
       <div class="progress" id="progress">
         <div class="progress-bar"><div class="progress-fill"></div></div>
         <div class="progress-msg" id="progressMsg">Processing…</div>
       </div>
 
       <div class="result" id="result"></div>
+      <div class="result result-push" id="pushResult"></div>
     </div>
 
     <div class="footer">

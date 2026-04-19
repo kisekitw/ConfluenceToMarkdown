@@ -162,3 +162,20 @@ body {
   font-size: 10px;
   color: #42526e;
 }
+
+/* ── Push button ─────────────────────────────── */
+.btn-push { background: #00875a; margin-top: 8px; }
+.btn-push:hover:not(:disabled)  { background: #00a368; }
+.btn-push:active:not(:disabled) { background: #006644; }
+
+.result-push {
+  background: #e3fcef;
+  border: 1px solid #abf5d1;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #006644;
+  line-height: 1.6;
+  display: none;
+  margin-top: 8px;
+}

@@ -546,7 +546,170 @@ class CF2MD {
 }
 
 /* =============================================================
- * 3.  MESSAGE LISTENER
+ * 3.  MARKDOWN → CONFLUENCE STORAGE FORMAT CONVERTER
+ * ============================================================ */
+class MD2CF {
+  convert(markdown) {
+    const lines = this._stripHeader(markdown.split('\n'));
+    return this._parseBlocks(lines);
+  }
+
+  _stripHeader(lines) {
+    let i = 0;
+    if (lines[i] !== undefined && /^# /.test(lines[i])) i++;
+    while (i < lines.length && lines[i].trim() === '') i++;
+    if (i < lines.length && /^>\s*\*\*Source:/.test(lines[i])) {
+      while (i < lines.length && lines[i].trim() !== '---') i++;
+      if (i < lines.length) i++;
+      while (i < lines.length && lines[i].trim() === '') i++;
+    }
+    return lines.slice(i);
+  }
+
+  _parseBlocks(lines) {
+    const out = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Fenced code block
+      const fenceM = line.match(/^```(\w*)/);
+      if (fenceM) {
+        const lang = fenceM[1];
+        const code = [];
+        i++;
+        while (i < lines.length && !lines[i].startsWith('```')) code.push(lines[i++]);
+        i++; // closing ```
+        out.push(this._codeMacro(lang, code.join('\n')));
+        continue;
+      }
+
+      // Table
+      if (/^\|/.test(line)) {
+        const rows = [];
+        while (i < lines.length && /^\|/.test(lines[i])) rows.push(lines[i++]);
+        out.push(this._buildTable(rows));
+        continue;
+      }
+
+      // List
+      if (/^( *)(-|\*|\d+\.) /.test(line)) {
+        const block = [];
+        while (i < lines.length) {
+          if (/^( *)(-|\*|\d+\.) /.test(lines[i])) {
+            block.push(lines[i++]);
+          } else if (lines[i].trim() === '' && i + 1 < lines.length &&
+                     /^ +(-|\*|\d+\.) /.test(lines[i + 1])) {
+            i++;
+          } else { break; }
+        }
+        out.push(this._buildList(block));
+        continue;
+      }
+
+      // Heading
+      const hM = line.match(/^(#{1,6}) (.+)$/);
+      if (hM) {
+        out.push(`<h${hM[1].length}>${this._inline(hM[2])}</h${hM[1].length}>`);
+        i++; continue;
+      }
+
+      // Horizontal rule
+      if (/^(---+|\*\*\*+|___+)\s*$/.test(line)) {
+        out.push('<hr/>'); i++; continue;
+      }
+
+      // Blockquote
+      if (line.startsWith('>')) {
+        const qLines = [];
+        while (i < lines.length && lines[i].startsWith('>'))
+          qLines.push(lines[i++].replace(/^>\s?/, ''));
+        out.push(`<blockquote><p>${this._inline(qLines.join(' '))}</p></blockquote>`);
+        continue;
+      }
+
+      // Blank line
+      if (line.trim() === '') { i++; continue; }
+
+      // Paragraph
+      const pLines = [];
+      while (i < lines.length && lines[i].trim() !== '' &&
+             !/^(#{1,6}) /.test(lines[i]) && !lines[i].startsWith('>') &&
+             !/^\|/.test(lines[i]) && !lines[i].startsWith('```') &&
+             !/^( *)(-|\*|\d+\.) /.test(lines[i]) &&
+             !/^(---+|\*\*\*+|___+)\s*$/.test(lines[i])) {
+        pLines.push(lines[i++]);
+      }
+      if (pLines.length) out.push(`<p>${this._inline(pLines.join(' '))}</p>`);
+    }
+    return out.join('\n');
+  }
+
+  _inline(text) {
+    const codes = [];
+    text = text.replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return `\uE000${codes.length-1}\uE000`; });
+    text = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    text = text.replace(/~~(.+?)~~/g, '<del>$1</del>');
+    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/__(.+?)__/g, '<strong>$1</strong>');
+    text = text.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+    text = text.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+    text = text.replace(/!\[[^\]]*\]\(images\/([^)]+)\)/g,
+      (_, f) => `<ac:image><ri:attachment ri:filename="${f}"/></ac:image>`);
+    text = text.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g,
+      (_, alt, url) => `<ac:image><ri:url ri:value="${url}"/></ac:image>`);
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+    text = text.replace(/\uE000(\d+)\uE000/g, (_, n) => {
+      const c = codes[+n].replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return `<code>${c}</code>`;
+    });
+    return text;
+  }
+
+  _codeMacro(lang, code) {
+    const safe = code.replace(/\]\]>/g, ']]]]><![CDATA[>');
+    const lp = lang ? `<ac:parameter ac:name="language">${lang}</ac:parameter>` : '';
+    return `<ac:structured-macro ac:name="code">${lp}<ac:plain-text-body><![CDATA[${safe}]]></ac:plain-text-body></ac:structured-macro>`;
+  }
+
+  _buildTable(rows) {
+    const isSep = r => r.replace(/^\||\|$/g,'').split('|').every(c => /^[\s:-]+$/.test(c));
+    const data = rows.filter(r => !isSep(r));
+    if (!data.length) return '';
+    const parse = r => r.replace(/^\||\|$/g,'').split('|').map(c => c.trim());
+    let h = '<table><tbody>';
+    data.forEach((r, idx) => {
+      const t = idx === 0 ? 'th' : 'td';
+      h += '<tr>' + parse(r).map(c => `<${t}><p>${this._inline(c)}</p></${t}>`).join('') + '</tr>';
+    });
+    return h + '</tbody></table>';
+  }
+
+  _buildList(lines) {
+    const items = lines.map(l => {
+      const m = l.match(/^( *)(-|\*|\d+\.) (.*)$/);
+      return m ? { depth: Math.floor(m[1].length / 2), ordered: /\d/.test(m[2]), text: m[3] } : null;
+    }).filter(Boolean);
+    if (!items.length) return '';
+    let idx = 0;
+    const render = (depth) => {
+      if (idx >= items.length || items[idx].depth < depth) return '';
+      const tag = items[idx].ordered ? 'ol' : 'ul';
+      let html = `<${tag}>`;
+      while (idx < items.length && items[idx].depth === depth) {
+        const item = items[idx++];
+        html += `<li><p>${this._inline(item.text)}</p>`;
+        if (idx < items.length && items[idx].depth > depth) html += render(depth + 1);
+        html += '</li>';
+      }
+      return html + `</${tag}>`;
+    };
+    return render(0);
+  }
+}
+
+/* =============================================================
+ * 4.  MESSAGE LISTENER
  * ============================================================ */
 let _busy = false;
 
@@ -561,6 +724,15 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
     _doExport(msg.options || {})
       .then(r  => reply({ success: true, ...r }))
       .catch(e => reply({ success: false, error: e.message }))
+      .finally(() => { _busy = false; });
+    return true;
+  }
+  if (msg.action === 'push') {
+    if (_busy) { reply({ success: false, error: 'Operation already running' }); return false; }
+    _busy = true;
+    _doPush(msg.markdown, msg.images || {})
+      .then(r  => reply({ success: true, ...r }))
+      .catch(e => reply({ success: false, error: _httpErrMsg(e) }))
       .finally(() => { _busy = false; });
     return true;
   }
@@ -602,5 +774,94 @@ async function _doExport(options) {
            imageCount: images.size, mdLines: markdown.split('\n').length };
 }
 
-  if (typeof module !== 'undefined') module.exports = { SimpleZip, CF2MD };
+function _getPageId() {
+  return document.querySelector('meta[name="ajs-page-id"],meta[name="confluence-page-id"]')?.content
+    || new URLSearchParams(location.search).get('pageId')
+    || location.pathname.match(/\/pages\/(\d+)/)?.[1]
+    || null;
+}
+
+function _getBaseUrl() {
+  const m = location.pathname.match(/^(\/wiki)\//);
+  return location.origin + (m ? m[1] : '');
+}
+
+async function _fetchPageMeta(baseUrl, pageId) {
+  const r = await fetch(`${baseUrl}/rest/api/content/${pageId}?expand=version,title`,
+    { credentials: 'include' });
+  if (!r.ok) { const e = new Error(`HTTP ${r.status}`); e.status = r.status; throw e; }
+  const d = await r.json();
+  return { title: d.title, version: d.version.number };
+}
+
+async function _uploadAttachment(baseUrl, pageId, filename, bytes) {
+  const chk = await fetch(
+    `${baseUrl}/rest/api/content/${pageId}/child/attachment?filename=${encodeURIComponent(filename)}`,
+    { credentials: 'include' });
+  const chkData = chk.ok ? await chk.json() : { results: [] };
+  const existing = chkData.results?.[0];
+
+  const fd = new FormData();
+  fd.append('file', new Blob([bytes]), filename);
+  fd.append('comment', 'Updated by CF2MD extension');
+
+  const url = existing
+    ? `${baseUrl}/rest/api/content/${pageId}/child/attachment/${existing.id}/data`
+    : `${baseUrl}/rest/api/content/${pageId}/child/attachment`;
+
+  const r = await fetch(url, {
+    method: 'POST', credentials: 'include',
+    headers: { 'X-Atlassian-Token': 'no-check' },
+    body: fd
+  });
+  if (!r.ok) { const e = new Error(`Attachment upload failed: HTTP ${r.status}`); e.status = r.status; throw e; }
+}
+
+async function _updatePageContent(baseUrl, pageId, title, versionNum, storageXml) {
+  const r = await fetch(`${baseUrl}/rest/api/content/${pageId}`, {
+    method: 'PUT', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      version: { number: versionNum }, type: 'page', title,
+      body: { storage: { value: storageXml, representation: 'storage' } }
+    })
+  });
+  if (r.status === 409) return null;
+  if (!r.ok) { const e = new Error(`HTTP ${r.status}`); e.status = r.status; throw e; }
+  return r.json();
+}
+
+async function _doPush(markdown, imagesObj) {
+  const pageId = _getPageId();
+  if (!pageId) throw new Error('Could not determine page ID — please navigate to the Confluence page first.');
+
+  const baseUrl = _getBaseUrl();
+  let { title, version } = await _fetchPageMeta(baseUrl, pageId);
+
+  for (const [name, arr] of Object.entries(imagesObj))
+    await _uploadAttachment(baseUrl, pageId, name, new Uint8Array(arr));
+
+  const storageXml = new MD2CF().convert(markdown);
+
+  let result = await _updatePageContent(baseUrl, pageId, title, version + 1, storageXml);
+  if (result === null) {
+    const fresh = await _fetchPageMeta(baseUrl, pageId);
+    title = fresh.title;
+    result = await _updatePageContent(baseUrl, pageId, fresh.title, fresh.version + 1, storageXml);
+    if (result === null) throw new Error('Version conflict — page was edited by someone else. Please re-export and try again.');
+  }
+
+  return { title, pageId, imageCount: Object.keys(imagesObj).length };
+}
+
+function _httpErrMsg(e) {
+  const s = e.status;
+  if (s === 401) return 'Authentication required — please log into Confluence and try again.';
+  if (s === 403) return 'Permission denied — you do not have edit access to this page.';
+  if (s === 404) return 'Page not found — the page may have been deleted.';
+  if (s === 409) return 'Version conflict — page was edited by someone else. Please re-export and try again.';
+  return e.message || 'Unknown error';
+}
+
+  if (typeof module !== 'undefined') module.exports = { SimpleZip, CF2MD, MD2CF };
 } // end guard
