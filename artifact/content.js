@@ -159,6 +159,7 @@ class CF2MD {
     if (el.id && /^(breadcrumbs|navigation|page-metadata|footer|header-precursor)$/.test(el.id)) return '';
     if (el.getAttribute('role') === 'navigation') return '';
     if (el.classList.contains('aui-toolbar2') || el.classList.contains('page-metadata')) return '';
+    if ([...el.classList].some(c => c.includes('task-list-tools') || c.includes('task-filter') || c.includes('task-progress'))) return '';
 
     // Visibility
     try {
@@ -169,12 +170,12 @@ class CF2MD {
     const kids = (c = {}) => this.elToMd(el, { ...ctx, ...c });
 
     switch (tag) {
-      case 'h1': return `\n# ${(await kids()).trim()}\n\n`;
-      case 'h2': return `\n## ${(await kids()).trim()}\n\n`;
-      case 'h3': return `\n### ${(await kids()).trim()}\n\n`;
-      case 'h4': return `\n#### ${(await kids()).trim()}\n\n`;
-      case 'h5': return `\n##### ${(await kids()).trim()}\n\n`;
-      case 'h6': return `\n###### ${(await kids()).trim()}\n\n`;
+      case 'h1': return `\n# ${(await kids()).trim().replace(/\*\*/g, '')}\n\n`;
+      case 'h2': return `\n## ${(await kids()).trim().replace(/\*\*/g, '')}\n\n`;
+      case 'h3': return `\n### ${(await kids()).trim().replace(/\*\*/g, '')}\n\n`;
+      case 'h4': return `\n#### ${(await kids()).trim().replace(/\*\*/g, '')}\n\n`;
+      case 'h5': return `\n##### ${(await kids()).trim().replace(/\*\*/g, '')}\n\n`;
+      case 'h6': return `\n###### ${(await kids()).trim().replace(/\*\*/g, '')}\n\n`;
 
       case 'p': {
         const t = (await kids()).trim();
@@ -199,6 +200,9 @@ class CF2MD {
         return `[${text}](${this.abs(href)})`;
       }
 
+      case 'input':
+        if (el.getAttribute('type') === 'checkbox') return el.checked ? '[x] ' : '[ ] ';
+        return '';
       case 'img':    return await this.handleImg(el, ctx);
       case 'code':   return ctx.inPre ? el.textContent : `\`${el.textContent.replace(/`/g,"'")}\``;
       case 'pre':    return await this.handlePre(el);
@@ -211,7 +215,7 @@ class CF2MD {
       case 'ol': return await this.handleList(el, true,  ctx.listDepth||0);
       case 'li': return await kids({ inList: true });
 
-      case 'table': return await this.handleTable(el);
+      case 'table': return await this.handleTable(el, ctx);
 
       case 'details': {
         const sum = el.querySelector(':scope > summary');
@@ -373,11 +377,21 @@ class CF2MD {
   }
 
   /* ── Tables ───────────────────────────────── */
-  async handleTable(el) {
+  async handleTable(el, ctx = {}) {
     const rows = Array.from(el.querySelectorAll(
       ':scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr, :scope > tr'
     ));
     if (!rows.length) return '';
+
+    // Nested table inside a table cell — flatten to text to avoid broken markdown
+    if (ctx.inTable) {
+      const parts = [];
+      for (const tr of rows) {
+        const cells = Array.from(tr.querySelectorAll(':scope > th, :scope > td'));
+        parts.push(cells.map(c => c.textContent.trim().replace(/\s+/g, ' ')).filter(Boolean).join(', '));
+      }
+      return parts.filter(Boolean).join('; ');
+    }
 
     const grid = [];
     let sepDone = false;
@@ -387,7 +401,7 @@ class CF2MD {
       const isHdr = cells.some(c => c.tagName.toLowerCase() === 'th');
       const texts = await Promise.all(cells.map(async td => {
         const t = await this.elToMd(td, { inTable: true });
-        return t.trim().replace(/\|/g,'\\|').replace(/[\r\n]+/g,'<br>').replace(/\s+/g,' ');
+        return t.trim().replace(/\|/g,'\\|').replace(/[\r\n]+/g,'<br>').replace(/\s+/g,' ').replace(/^(<br>\s*)+|(\s*<br>)+$/g,'').trim();
       }));
       grid.push({ texts, isHdr });
     }
@@ -454,7 +468,7 @@ class CF2MD {
     if (this.opts.includeJira &&
         (macro === 'jira' || cls.some(c => c.includes('jira-issues') || c.includes('jira-table')))) {
       const table = el.querySelector('table');
-      if (table) return await this.handleTable(table);
+      if (table) return await this.handleTable(table, ctx);
     }
     // ── TOC ──
     if (macro === 'toc' || cls.some(c => c.includes('toc-macro'))) return '*[Table of Contents]*\n\n';
@@ -485,30 +499,134 @@ class CF2MD {
   async handleGliffy(el) {
     const title = el.querySelector('[class*="title"]')?.textContent.trim() || 'Gliffy Diagram';
 
-    // 1. Rendered <img>
-    for (const img of el.querySelectorAll('img[src]')) {
-      if (!img.src || img.src.startsWith('data:') && img.src.length < 600) continue;
+    // 1. Rendered <img> — check src and common lazy-load attributes
+    for (const img of el.querySelectorAll('img')) {
+      const src = img.src ||
+        img.getAttribute('data-src') || img.getAttribute('data-lazy-src') ||
+        img.getAttribute('data-original') || img.getAttribute('data-full-size-src') || '';
+      if (!src || (src.startsWith('data:') && src.length < 600)) continue;
       try {
-        const fname = await this.fetchImg(img.src, 'gliffy');
+        const fname = await this.fetchImg(src, 'gliffy');
         return `\n![${title}](images/${fname})\n\n`;
       } catch (_) {}
-      return `\n![${title}](${this.abs(img.src)})\n\n`;
+      return `\n![${title}](${this.abs(src)})\n\n`;
     }
-    // 2. Canvas
-    const canvas = el.querySelector('canvas');
-    if (canvas) {
+
+    // 2. Canvas element already rendered by Gliffy JS
+    const existingCanvas = el.querySelector('canvas');
+    if (existingCanvas) {
       try {
-        const fname = await this.fetchImg(canvas.toDataURL('image/png'), 'gliffy');
+        const fname = await this.fetchImg(existingCanvas.toDataURL('image/png'), 'gliffy');
         return `\n![${title}](images/${fname})\n\n`;
       } catch (_) {}
     }
-    // 3. SVG
+
+    // 3. Gliffy PNG via Confluence attachment API (avoids canvas taint entirely)
+    // diagram name: data attributes → macro params → title text (title IS the diagram name in Gliffy)
+    const diagramName =
+      el.querySelector('[data-diagram-name]')?.getAttribute('data-diagram-name') ||
+      el.closest('[data-diagram-name]')?.getAttribute('data-diagram-name') ||
+      (el.getAttribute('data-macro-parameters') || '').match(/(?:^|[&;])name=([^&;]+)/i)?.[1] ||
+      (title !== 'Gliffy Diagram' ? title : '');
+    // page ID: Confluence meta tag (most reliable) → data attrs → AJS global → URL
+    const pageId =
+      document.querySelector('meta[name="ajs-page-id"]')?.getAttribute('content') ||
+      el.querySelector('[data-page-id]')?.getAttribute('data-page-id') ||
+      document.querySelector('[data-page-id]')?.getAttribute('data-page-id') ||
+      document.querySelector('[data-content-id]')?.getAttribute('data-content-id') ||
+      (typeof AJS !== 'undefined' ? AJS?.params?.pageId : '') ||
+      location.pathname.match(/\/(\d+)(?:\/|$)/)?.[1] || '';
+    if (diagramName && pageId) {
+      for (const pat of [
+        `${location.origin}/download/attachments/${pageId}/${encodeURIComponent(diagramName)}.png`,
+        `${location.origin}/download/thumbnails/${pageId}/${encodeURIComponent(diagramName)}.png`,
+        `${location.origin}/download/attachments/${pageId}/${encodeURIComponent(diagramName)}.gliffy.png`,
+      ]) {
+        try {
+          const fname = await this.fetchImg(pat, 'gliffy');
+          return `\n![${title}](images/${fname})\n\n`;
+        } catch (_) {}
+      }
+    }
+
+    // 4. SVG → PNG via canvas — resolve ALL external/relative URLs to data URIs first
     const svg = el.querySelector('svg');
     if (svg) {
-      const bytes = new TextEncoder().encode(new XMLSerializer().serializeToString(svg));
-      const fname = `gliffy_${++this.imgIdx}.svg`;
-      this.images.set(fname, bytes);
-      return `\n![${title}](images/${fname})\n\n`;
+      try {
+        const XLINK    = 'http://www.w3.org/1999/xlink';
+        const BLANK    = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        const svgClone = svg.cloneNode(true);
+
+        // Drop scripts and external stylesheet links
+        for (const n of svgClone.querySelectorAll('script, link[href]')) n.remove();
+
+        // Determine if a value is a loadable URL (not a namespace URI, fragment, or data URI)
+        const isUrl = v => v && !v.startsWith('data:') && !v.startsWith('#') &&
+          (/^https?:\/\//.test(v) || v.startsWith('/') || v.startsWith('./') || v.startsWith('../'));
+        const toAbs = v => /^https?:\/\//.test(v) ? v : new URL(v, location.href).href;
+
+        // Fetch and inline a URL → data URI, or BLANK on failure
+        const inline = async (url) => {
+          try {
+            const r = await fetch(url, { credentials: 'include' });
+            if (!r.ok) return BLANK;
+            const mime = r.headers.get('content-type') || 'image/png';
+            const b64  = btoa(String.fromCharCode(...new Uint8Array(await r.arrayBuffer())));
+            return `data:${mime};base64,${b64}`;
+          } catch (_) { return BLANK; }
+        };
+
+        // Collect unique external URLs referenced by any element attribute (skip xmlns:* declarations)
+        const urlMap = new Map(); // absUrl → [{node, attrName}]
+        for (const node of svgClone.querySelectorAll('*')) {
+          for (const attr of [...node.attributes]) {
+            if (attr.name.startsWith('xmlns')) continue;
+            if (!isUrl(attr.value)) continue;
+            const abs = toAbs(attr.value);
+            if (!urlMap.has(abs)) urlMap.set(abs, []);
+            urlMap.get(abs).push({ node, attrName: attr.name });
+          }
+        }
+
+        // Fetch all in parallel then replace
+        const results = new Map();
+        await Promise.all([...urlMap.keys()].map(async u => results.set(u, await inline(u))));
+        for (const [abs, pairs] of urlMap) {
+          const dataUri = results.get(abs);
+          for (const { node, attrName } of pairs) {
+            node.setAttribute(attrName, dataUri);
+            if (attrName === 'href') node.removeAttributeNS(XLINK, 'href');
+          }
+        }
+
+        // Strip CSS url() references that are not data URIs or local fragments
+        const scrubCss = s => s.replace(/url\(\s*['"]?(?!data:|#)[^)'"]*['"]?\s*\)/gi, 'none');
+        for (const s of svgClone.querySelectorAll('style'))
+          s.textContent = scrubCss(s.textContent);
+        for (const n of svgClone.querySelectorAll('[style]'))
+          n.setAttribute('style', scrubCss(n.getAttribute('style')));
+
+        const svgStr = new XMLSerializer().serializeToString(svgClone);
+        const w = svg.viewBox?.baseVal?.width  || svg.width?.baseVal?.value  || svg.getBoundingClientRect().width  || 800;
+        const h = svg.viewBox?.baseVal?.height || svg.height?.baseVal?.value || svg.getBoundingClientRect().height || 600;
+        const blobUrl = URL.createObjectURL(new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }));
+        const pngDataUrl = await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => {
+            const c = document.createElement('canvas');
+            c.width = w; c.height = h;
+            c.getContext('2d').drawImage(img, 0, 0, w, h);
+            URL.revokeObjectURL(blobUrl);
+            try { resolve(c.toDataURL('image/png')); } catch (e) { reject(e); }
+          };
+          img.onerror = () => { URL.revokeObjectURL(blobUrl); reject(new Error('svg load failed')); };
+          img.src = blobUrl;
+        });
+        const fname = await this.fetchImg(pngDataUrl, 'gliffy');
+        return `\n![${title}](images/${fname})\n\n`;
+      } catch (_) {
+        // fall through to fallback
+      }
     }
     return `\n> *[${title} — Gliffy not rendered]*\n\n`;
   }

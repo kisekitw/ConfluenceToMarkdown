@@ -198,6 +198,25 @@ describe('CF2MD.handleList()', () => {
     const result = await cv.handleList(ul, false, 0);
     expect(result.trim()).toBe('- Real');
   });
+  test('task list with checked item renders GFM - [x] checkbox', async () => {
+    const ul = el('<ul><li><input type="checkbox" checked>Done task</li></ul>');
+    const result = await cv.handleList(ul, false, 0);
+    expect(result).toContain('- [x] Done task');
+  });
+  test('task list with unchecked item renders GFM - [ ] checkbox', async () => {
+    const ul = el('<ul><li><input type="checkbox">Pending task</li></ul>');
+    const result = await cv.handleList(ul, false, 0);
+    expect(result).toContain('- [ ] Pending task');
+  });
+  test('mixed checked and unchecked task items render correctly', async () => {
+    const ul = el(`<ul>
+      <li><input type="checkbox" checked>Done</li>
+      <li><input type="checkbox">Todo</li>
+    </ul>`);
+    const result = await cv.handleList(ul, false, 0);
+    expect(result).toContain('- [x] Done');
+    expect(result).toContain('- [ ] Todo');
+  });
 });
 
 // ─── handleTable() ───────────────────────────────────────────────────────────
@@ -232,6 +251,32 @@ describe('CF2MD.handleTable()', () => {
   test('returns empty string for a table with no rows', async () => {
     const table = el('<table></table>');
     expect(await cv.handleTable(table)).toBe('');
+  });
+  test('cell containing only <br> renders as empty, not literal "<br>"', async () => {
+    const table = el('<table><tr><th>ID</th><th>Notes</th></tr><tr><td>CEC01</td><td><br></td></tr></table>');
+    const result = await cv.handleTable(table);
+    expect(result).not.toContain('| <br> |');
+    expect(result).toContain('| CEC01 |');
+  });
+  test('cell with text followed by trailing <br> strips the trailing <br>', async () => {
+    const table = el('<table><tr><td>text<br></td></tr></table>');
+    const result = await cv.handleTable(table);
+    expect(result).not.toMatch(/text<br>/);
+    expect(result).toContain('text');
+  });
+  test('nested table inside a cell is flattened to text, not markdown table syntax', async () => {
+    const table = el(`<table>
+      <tr><th>Type</th><th>Issues</th></tr>
+      <tr><td>EPIC</td><td>
+        <table><tr><th>Key</th><th>Summary</th></tr><tr><td>HMISW-123</td><td>Fix bug</td></tr></table>
+      </td></tr>
+    </table>`);
+    const result = await cv.handleTable(table);
+    // Nested table should NOT produce escaped pipes or inner markdown table rows
+    const epicRow = result.split('\n').find(l => l.includes('EPIC'));
+    expect(epicRow).toBeDefined();
+    expect(epicRow).not.toContain('\\|');
+    expect(result).toContain('HMISW-123');
   });
 });
 
@@ -397,6 +442,22 @@ describe('CF2MD.nodeToMd()', () => {
       const prefix = '#'.repeat(n);
       expect(await cv.nodeToMd(node, {})).toBe(`\n${prefix} Heading ${n}\n\n`);
     });
+    test('heading with single <strong> child strips ** markers', async () => {
+      const node = el('<h2><strong>Bold Title</strong></h2>');
+      expect(await cv.nodeToMd(node, {})).toBe('\n## Bold Title\n\n');
+    });
+    test('heading with adjacent <strong> elements does not produce ****', async () => {
+      const node = el('<h2><strong>Constraint</strong><strong>Specification</strong></h2>');
+      const result = await cv.nodeToMd(node, {});
+      expect(result).not.toContain('****');
+      expect(result).toBe('\n## ConstraintSpecification\n\n');
+    });
+    test('heading with mixed text and <strong> strips only ** markers', async () => {
+      const node = el('<h3>5.1 <strong>Capacity</strong> and <strong>Spec</strong></h3>');
+      const result = await cv.nodeToMd(node, {});
+      expect(result).not.toContain('**');
+      expect(result).toContain('5.1 Capacity and Spec');
+    });
   });
 
   describe('inline formatting', () => {
@@ -448,6 +509,40 @@ describe('CF2MD.nodeToMd()', () => {
     test('empty text content → empty string', async () => {
       const a = el('<a href="https://example.com">   </a>');
       expect(await cv.nodeToMd(a, {})).toBe('');
+    });
+  });
+
+  describe('checkbox input', () => {
+    test('checked checkbox → [x] ', async () => {
+      const node = document.createElement('input');
+      node.setAttribute('type', 'checkbox');
+      node.checked = true;
+      expect(await cv.nodeToMd(node, {})).toBe('[x] ');
+    });
+    test('unchecked checkbox → [ ] ', async () => {
+      const node = document.createElement('input');
+      node.setAttribute('type', 'checkbox');
+      expect(await cv.nodeToMd(node, {})).toBe('[ ] ');
+    });
+    test('non-checkbox input → empty string', async () => {
+      const node = document.createElement('input');
+      node.setAttribute('type', 'text');
+      expect(await cv.nodeToMd(node, {})).toBe('');
+    });
+  });
+
+  describe('task-list UI controls', () => {
+    test('element with task-list-tools class returns empty string', async () => {
+      const div = el('<div class="task-list-tools"><a>All</a><a>Incomplete</a></div>');
+      expect(await cv.nodeToMd(div, {})).toBe('');
+    });
+    test('element with task-filter class returns empty string', async () => {
+      const div = el('<div class="task-filter-bar">Filter</div>');
+      expect(await cv.nodeToMd(div, {})).toBe('');
+    });
+    test('element with task-progress class returns empty string', async () => {
+      const div = el('<div class="task-progress-bar">2 / 5</div>');
+      expect(await cv.nodeToMd(div, {})).toBe('');
     });
   });
 
@@ -564,6 +659,140 @@ describe('CF2MD.handleImg()', () => {
     );
     expect(outside).toMatch(/^\n/);
     expect(inside).not.toMatch(/^\n/);
+  });
+});
+
+// ─── handleGliffy() ──────────────────────────────────────────────────────────
+
+describe('CF2MD.handleGliffy()', () => {
+  let cv;
+
+  const mockFetchOk = () => {
+    const buf = new Uint8Array([137, 80, 78, 71]).buffer;
+    global.fetch.mockResolvedValue({
+      ok: true,
+      blob: jest.fn().mockResolvedValue({ type: 'image/png', arrayBuffer: jest.fn().mockResolvedValue(buf) }),
+    });
+  };
+
+  beforeEach(() => {
+    cv = new CF2MD({ includeMacros: true, includeImages: true });
+    document.head.innerHTML = '';
+  });
+  afterEach(() => {
+    jest.clearAllMocks();
+    document.head.innerHTML = '';
+    document.body.innerHTML = '';
+  });
+
+  test('fetches rendered <img src> inside container', async () => {
+    mockFetchOk();
+    const div = el(`<div class="gliffy-container">
+      <div class="gliffy-title">my_diagram</div>
+      <img src="https://confluence.example.com/download/attachments/123/my_diagram.png">
+    </div>`);
+    const result = await cv.handleGliffy(div);
+    expect(result).toContain('![my_diagram](images/gliffy_1.png)');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('my_diagram.png'),
+      expect.any(Object)
+    );
+  });
+
+  test('fetches lazy-loaded img via data-src attribute', async () => {
+    mockFetchOk();
+    const div = el(`<div class="gliffy-container">
+      <div class="gliffy-title">lazy_diagram</div>
+      <img data-src="https://confluence.example.com/lazy.png">
+    </div>`);
+    const result = await cv.handleGliffy(div);
+    expect(result).toContain('images/gliffy_1.png');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('lazy.png'),
+      expect.any(Object)
+    );
+  });
+
+  test('falls back to absolute URL when img fetch fails', async () => {
+    global.fetch.mockRejectedValue(new Error('Network error'));
+    const div = el(`<div class="gliffy-container">
+      <div class="gliffy-title">My Diagram</div>
+      <img src="https://confluence.example.com/diagram.png">
+    </div>`);
+    const result = await cv.handleGliffy(div);
+    expect(result).toContain('https://confluence.example.com/diagram.png');
+  });
+
+  test('uses Confluence attachment API: page-id from ajs-page-id meta, diagram name from title', async () => {
+    mockFetchOk();
+    document.head.innerHTML = '<meta name="ajs-page-id" content="98765">';
+    const div = el(`<div class="gliffy-container">
+      <div class="gliffy-title">sample_flow</div>
+    </div>`);
+    const result = await cv.handleGliffy(div);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/download/attachments/98765/sample_flow.png'),
+      expect.objectContaining({ credentials: 'include' })
+    );
+    expect(result).toContain('images/gliffy_1.png');
+  });
+
+  test('uses diagram name from data-macro-parameters name= attribute', async () => {
+    mockFetchOk();
+    document.head.innerHTML = '<meta name="ajs-page-id" content="11111">';
+    const div = el(`<div class="gliffy-container" data-macro-parameters="name=arch_diagram&amp;align=left"></div>`);
+    const result = await cv.handleGliffy(div);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/download/attachments/11111/arch_diagram.png'),
+      expect.any(Object)
+    );
+    expect(result).toContain('images/');
+  });
+
+  test('tries attachments URL before thumbnails URL', async () => {
+    mockFetchOk();
+    document.head.innerHTML = '<meta name="ajs-page-id" content="42">';
+    const div = el(`<div class="gliffy-container">
+      <div class="gliffy-title">flow</div>
+    </div>`);
+    await cv.handleGliffy(div);
+    expect(global.fetch.mock.calls[0][0]).toContain('/download/attachments/42/flow.png');
+  });
+
+  test('returns not-rendered fallback when no img, no canvas, no page-id, no svg', async () => {
+    const div = el(`<div class="gliffy-container">
+      <div class="gliffy-title">orphan_diagram</div>
+    </div>`);
+    const result = await cv.handleGliffy(div);
+    expect(result).toContain('orphan_diagram');
+    expect(result).toContain('Gliffy not rendered');
+  });
+
+  test('returns not-rendered fallback when Confluence attachment API returns 404', async () => {
+    global.fetch.mockResolvedValue({ ok: false, status: 404, blob: jest.fn() });
+    document.head.innerHTML = '<meta name="ajs-page-id" content="99">';
+    const div = el(`<div class="gliffy-container">
+      <div class="gliffy-title">missing_diagram</div>
+    </div>`);
+    const result = await cv.handleGliffy(div);
+    expect(result).toContain('Gliffy not rendered');
+  });
+
+  test('skips short data-URI placeholder images', async () => {
+    mockFetchOk();
+    document.head.innerHTML = '<meta name="ajs-page-id" content="55">';
+    const shortDataUri = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+    const div = el(`<div class="gliffy-container">
+      <div class="gliffy-title">real_diagram</div>
+      <img src="${shortDataUri}">
+    </div>`);
+    const result = await cv.handleGliffy(div);
+    // Should skip the placeholder and fall through to the Confluence API
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/download/attachments/55/real_diagram.png'),
+      expect.any(Object)
+    );
+    expect(result).toContain('images/gliffy_1.png');
   });
 });
 
