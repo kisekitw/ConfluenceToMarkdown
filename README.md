@@ -7,7 +7,7 @@ A Chrome extension (Manifest V3) that exports Confluence pages to Markdown and p
 ### Export (Confluence → Markdown)
 - Converts Confluence pages to clean Markdown
 - Downloads images and attachments (lazy-loaded images supported)
-- Captures diagrams: Gliffy, draw.io (rendered images and SVG fallback)
+- Captures diagrams: Gliffy (PNG via Confluence attachment API, with full SVG sanitisation fallback), draw.io
 - Converts panels, info/warning/note/tip callouts, expand macros
 - Converts Jira issue tables
 - Includes optional metadata header (source URL, export date)
@@ -107,6 +107,13 @@ tests/             ← Jest test suite
 ```
 
 ## Changelog
+
+### v1.2.2
+- Improved Gliffy diagram export: fetches PNG directly from the Confluence attachment API (`/download/attachments/{pageId}/{name}.png`) to avoid canvas cross-origin taint errors
+- Diagram name resolved from data attributes, macro parameters, or title text; page ID sourced from the `<meta name="ajs-page-id">` tag
+- SVG→canvas fallback now resolves all relative/absolute URLs to data URIs before rendering, correctly skips XML namespace declarations, and preserves local `url(#…)` CSS fragment references
+- Improved lazy-loaded image detection in Gliffy containers (`data-src`, `data-lazy-src`, etc.)
+- Added 9 unit tests for `handleGliffy()`
 
 ### v1.2.1
 - Fixed ZIP parsing for files compressed with Deflate (Windows zip tool compatibility)
